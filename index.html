@@ -156,7 +156,32 @@ details.guide summary{cursor:pointer;font-family:var(--display);font-weight:700;
 .guide table{border-collapse:collapse;width:100%;font-size:.9rem}
 .guide th,.guide td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;white-space:nowrap}
 .guide th{color:var(--muted);font-weight:600}
-@media (prefers-reduced-motion:reduce){.card.deal{animation:none}}
+[hidden]{display:none!important}
+
+/* rapid fire */
+.seg.ondark{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.35)}
+.seg.ondark button{color:#f4f7f5}
+.seg.ondark button+button{border-left-color:rgba(255,255,255,.35)}
+.seg.ondark button[aria-pressed="true"]{background:var(--brass-bright);color:#1c1608}
+.felt.rapid{min-height:0}
+.rtable{position:relative;height:clamp(330px,56vw,470px);border-radius:16px;border:2px dashed rgba(255,255,255,.2);overflow:hidden}
+.rtable .card{position:absolute;--cw:clamp(56px,12vw,90px);left:calc((100% - var(--cw))*var(--fx));top:calc((100% - var(--cw)*1.4)*var(--fy));transform:rotate(var(--rot))}
+.card.rdeal{animation:rdeal .22s ease-out}
+@keyframes rdeal{from{transform:rotate(var(--rot)) scale(1.4);opacity:0}to{transform:rotate(var(--rot)) scale(1);opacity:1}}
+.rtable:not(.tags) .tag{display:none}
+.rmsg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:16px;pointer-events:none;z-index:1000;font-family:var(--display);color:#fff}
+.rmsg p{margin:6px auto 0;max-width:34ch;font-family:var(--body);font-size:.98rem;color:#d6e6df}
+.rbig{font-size:clamp(2.2rem,7.5vw,3.6rem);font-weight:800;letter-spacing:-.01em;text-shadow:0 2px 12px rgba(0,0,0,.45)}
+.rset{display:flex;flex-direction:column;gap:14px}
+.rrow{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:.95rem}
+.rrow output{font-weight:700;font-family:var(--display)}
+.rrow input{grid-column:1/-1;width:100%;accent-color:var(--brass-bright)}
+.chk{display:flex;gap:8px;align-items:center;font-size:.92rem;color:#e6efea}
+.chk input{width:18px;height:18px;accent-color:var(--brass-bright)}
+.rprog{height:10px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden}
+.rpf{height:100%;background:var(--brass-bright);width:0}
+.rinput{width:96px;text-align:center;border:1.5px solid var(--line);border-radius:10px;padding:8px;background:var(--panel);color:var(--ink);font-family:var(--display);font-size:1.5rem;font-weight:700}
+@media (prefers-reduced-motion:reduce){.card.deal,.card.rdeal{animation:none}}
 </style>
 </head>
 <body>
@@ -171,6 +196,7 @@ details.guide summary{cursor:pointer;font-family:var(--display);font-weight:700;
         <div class="seg" role="group" aria-label="Mode">
           <button data-act="mode" data-v="training">Training</button>
           <button data-act="mode" data-v="testing">Testing</button>
+          <button data-act="mode" data-v="rapid">Rapid fire</button>
         </div></div>
       <div class="field"><span class="lab">Decks in shoe</span>
         <div class="seg" role="group" aria-label="Decks in shoe">
@@ -254,10 +280,11 @@ details.guide summary{cursor:pointer;font-family:var(--display);font-weight:700;
         </ul>
       </div>
       <div>
-        <h3>How to use the two modes</h3>
+        <h3>How to use the three modes</h3>
         <ol>
           <li><b>Training</b> shows the count, card values, deck percentages, the best bet and the best play. Play until the numbers feel natural.</li>
           <li><b>Testing</b> hides all of it. After each hand you get graded on your bet, every play, and a running-count check.</li>
+          <li><b>Rapid fire</b> flashes cards across the table one at a time. Count them from 0, then answer “What’s the count?”. Pick Easy, Medium or Hard, or set your own speed and card total.</li>
         </ol>
       </div>
     </div>
@@ -388,6 +415,108 @@ const newHand=bet=>({cards:[],bet,done:false,bust:false,blackjack:false,splitHan
 const canDouble=h=>h.cards.length===2&&!h.splitAces&&S.bank>=h.bet;
 const canSplit=h=>h.cards.length===2&&!h.splitAces&&val(h.cards[0].r)===val(h.cards[1].r)&&S.hands.length<4&&S.bank>=h.bet;
 function getRec(h){return recommend(h.cards,S.dealer[0].r,{canDouble:canDouble(h),canSplit:canSplit(h),tc:shoeStats().tc},S.decks)}
+
+/* ---------- rapid fire ---------- */
+const PRESETS={easy:{secs:2,n:10},medium:{secs:1,n:25},hard:{secs:0.5,n:50}};
+const R={diff:"easy",secs:2,n:10,tags:false,phase:"idle",shoe:[],cards:[],rc:0,token:0,quiz:null,stats:{rounds:0,correct:0,streak:0,best:0,cards:0}};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const rapidMax=()=>Math.min(60,S.decks*52);
+const fmtS=s=>s.toFixed(2).replace(/\.?0+$/,"");
+function matchDiff(){for(const k in PRESETS){if(PRESETS[k].secs===R.secs&&PRESETS[k].n===R.n)return k}return"custom"}
+function clampRapid(){R.n=Math.max(5,Math.min(R.n,rapidMax()));R.diff=matchDiff()}
+function rapidLabel(){const l=R.diff==="custom"?"Custom":R.diff[0].toUpperCase()+R.diff.slice(1);return`${l}: ${fmtS(R.secs)}s per card, ${R.n} cards`}
+function pickPos(){
+  const recent=R.cards.slice(-3);let best=null,bd=-1;
+  for(let k=0;k<8;k++){
+    const p={fx:Math.random(),fy:Math.random()};
+    const d=recent.length?Math.min(...recent.map(c=>Math.hypot((c.fx-p.fx)*1.6,c.fy-p.fy))):1;
+    if(d>bd){bd=d;best=p}
+  }
+  return{fx:best.fx,fy:best.fy,rot:Math.round(Math.random()*36-18)};
+}
+function rcardHTML(c,anim){
+  const red=c.s==="♥"||c.s==="♦";const v=hiLo(c.r);
+  return`<div class="card${red?" red":""}${anim?" rdeal":""}" style="--fx:${c.fx.toFixed(3)};--fy:${c.fy.toFixed(3)};--rot:${c.rot}deg;z-index:${c.z}" role="img" aria-label="${c.r} of ${c.s}"><span class="rk">${c.r}</span><span class="su">${c.s}</span><span class="big">${c.s}</span><span class="tag ${v>0?"pos":v<0?"neg":"zero"}">${v>0?"+1":v<0?"\u22121":"0"}</span></div>`;
+}
+function updateProg(){
+  const f=$("#rpf"),t=$("#rpt");
+  if(f)f.style.width=(R.cards.length/R.n*100)+"%";
+  if(t)t.textContent=`Card ${R.cards.length} of ${R.n}`;
+}
+async function startRapid(){
+  if(R.phase!=="idle"&&R.phase!=="result")return;
+  const tk=++R.token;
+  R.shoe=makeShoe();R.cards=[];R.rc=0;R.quiz=null;R.phase="ready";render();
+  await wait(1200);if(R.token!==tk)return;
+  R.phase="showing";render();
+  const n=R.n,ms=R.secs*1000;
+  for(let i=0;i<n;i++){
+    const c=R.shoe.pop();const p=pickPos();
+    c.fx=p.fx;c.fy=p.fy;c.rot=p.rot;c.z=i+1;
+    R.rc+=hiLo(c.r);R.cards.push(c);
+    const tb=$("#rtable");if(tb)tb.insertAdjacentHTML("beforeend",rcardHTML(c,true));
+    updateProg();
+    await wait(ms);if(R.token!==tk)return;
+  }
+  R.phase="ask";render();
+}
+function stopRapid(){R.token++;R.phase="idle";R.cards=[];R.quiz=null;render()}
+function checkRapid(){
+  if(R.phase!=="ask")return;
+  const inp=$("#rquizin");if(!inp||inp.value==="")return;
+  const guess=parseInt(inp.value,10);if(Number.isNaN(guess))return;
+  const ok=guess===R.rc;R.quiz={guess,actual:R.rc,ok};
+  const s=R.stats;s.rounds++;s.cards+=R.n;
+  if(ok){s.correct++;s.streak++;if(s.streak>s.best)s.best=s.streak}else s.streak=0;
+  R.phase="result";render();
+}
+function renderRapid(){
+  const ph=R.phase;let msg="";
+  if(ph==="idle")msg=`<div><b style="font-size:clamp(1.3rem,3.6vw,1.8rem)">Rapid fire</b><p>Press Start. Cards appear one at a time all over the table. Count from 0, then tell us the running count.</p></div>`;
+  else if(ph==="ready")msg=`<b class="rbig">Get ready…</b>`;
+  else if(ph==="ask")msg=`<b class="rbig">What’s the count?</b>`;
+  const cards=(ph==="showing"||ph==="result")?R.cards.map(c=>rcardHTML(c,false)).join(""):"";
+  $("#felt").innerHTML=`<div class="felt rapid"><div class="felt-top"><span>${S.decks} deck${S.decks>1?"s":""} in the shoe, count starts at 0</span><span class="bank">${rapidLabel()}</span></div><div class="rtable${(R.tags||ph==="result")?" tags":""}" id="rtable">${cards}${msg?`<div class="rmsg" aria-live="polite">${msg}</div>`:""}</div></div>`;
+  let c=`<div class="controls">`;
+  if(ph==="idle"||ph==="result"){
+    c+=`<div class="rset"><div class="row"><div class="seg ondark" role="group" aria-label="Difficulty">${["easy","medium","hard"].map(k=>`<button data-act="rdiff" data-v="${k}" aria-pressed="${R.diff===k}">${k[0].toUpperCase()+k.slice(1)}</button>`).join("")}</div><span class="quiet" id="rcustom">${R.diff==="custom"?"Custom settings":""}</span></div>`;
+    c+=`<label class="rrow"><span>Seconds per card</span><output id="rsecsv">${fmtS(R.secs)}s</output><input type="range" id="rsecs" min="0.25" max="4" step="0.25" value="${R.secs}"></label>`;
+    c+=`<label class="rrow"><span>Cards before the question</span><output id="rnv">${R.n}</output><input type="range" id="rn" min="5" max="${rapidMax()}" step="1" value="${R.n}"></label>`;
+    c+=`<label class="chk"><input type="checkbox" id="rtags" ${R.tags?"checked":""}> Show +1 / 0 / −1 on each card (beginner help)</label>`;
+    c+=`<div class="row"><button class="btn primary big" data-act="rstart">${ph==="result"?"Go again":"Start"}</button></div></div>`;
+  }else if(ph==="ready"||ph==="showing"){
+    c+=`<div class="rprog"><div class="rpf" id="rpf" style="width:${R.n?(R.cards.length/R.n*100):0}%"></div></div><p class="quiet" id="rpt">${ph==="ready"?"Get ready…":`Card ${R.cards.length} of ${R.n}`}</p><div class="row"><button class="btn on-felt" data-act="rstop">Stop</button></div>`;
+  }else if(ph==="ask"){
+    c+=`<div class="row"><button class="btn on-felt big" data-act="rstep" data-d="-1" aria-label="Minus one">−</button><input id="rquizin" class="rinput" type="number" step="1" inputmode="numeric" value="0" aria-label="Your running count"><button class="btn on-felt big" data-act="rstep" data-d="1" aria-label="Plus one">+</button></div><div class="row"><button class="btn primary big" data-act="rcheck">Check my count</button></div>`;
+  }
+  c+=`</div>`;$("#controls").innerHTML=c;
+  if(ph==="ask"&&window.matchMedia&&matchMedia("(pointer:fine)").matches){const i=$("#rquizin");if(i){i.focus();i.select()}}
+  let rv="";
+  if(ph==="result"&&R.quiz){
+    const q=R.quiz;const low=R.cards.filter(x=>hiLo(x.r)>0).length,high=R.cards.filter(x=>hiLo(x.r)<0).length;
+    const chips=R.cards.map(x=>{const v=hiLo(x.r);return`<span class="lc ${v>0?"p":v<0?"n":""}">${x.r}${x.s} ${signed(v)}</span>`}).join("");
+    rv=`<div class="review"><h2>${q.ok?"Correct!":"Not quite"}</h2><p class="net ${q.ok?"pos":"neg"}">You said ${signed(q.guess)}. The running count was ${signed(q.actual)}${q.ok?"":` (off by ${Math.abs(q.guess-q.actual)})`}.</p><p class="note">${low} low cards (+1) minus ${high} high cards (−1) = ${signed(low-high)}. The cards are back on the table with their values, and listed here in the order they appeared:</p><div class="logchips">${chips}</div></div>`;
+  }
+  $("#review").innerHTML=rv;
+  const s=R.stats;const pc=s.rounds?Math.round(s.correct/s.rounds*100)+"%":"–";
+  $("#strip").innerHTML="";
+  $("#side").innerHTML=`<div class="panel"><h2>How rapid fire works</h2><p style="margin:0">Cards flash on the table. Add them up as they appear, starting from 0, then enter the running count when asked.</p><dl class="kv"><dt>2, 3, 4, 5, 6</dt><dd class="pos">+1</dd><dt>7, 8, 9</dt><dd>0</dd><dt>10, J, Q, K, A</dt><dd class="neg">\u22121</dd></dl><p class="note">Tip: a low card and a high card cancel out. Counting in pairs helps you keep up on Hard.</p></div><div class="panel"><h2>Your score</h2><dl class="score"><dt>Rounds played</dt><dd>${s.rounds}</dd><dt>Correct</dt><dd>${s.correct} of ${s.rounds} (${pc})</dd><dt>Current streak</dt><dd>${s.streak}</dd><dt>Best streak</dt><dd>${s.best}</dd><dt>Cards counted</dt><dd>${s.cards}</dd></dl></div>`;
+}
+function syncRapidFields(){
+  R.diff=matchDiff();
+  const a=$("#rsecsv"),b=$("#rnv"),cu=$("#rcustom"),bk=document.querySelector(".felt.rapid .bank");
+  if(a)a.textContent=fmtS(R.secs)+"s";
+  if(b)b.textContent=R.n;
+  if(cu)cu.textContent=R.diff==="custom"?"Custom settings":"";
+  if(bk)bk.textContent=rapidLabel();
+  document.querySelectorAll('[data-act="rdiff"]').forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===R.diff)));
+}
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.id==="rsecs"){R.secs=parseFloat(t.value);syncRapidFields()}
+  else if(t.id==="rn"){R.n=parseInt(t.value,10);syncRapidFields()}
+  else if(t.id==="rtags"){R.tags=t.checked;const tb=$("#rtable");if(tb)tb.classList.toggle("tags",R.tags||R.phase==="result")}
+});
 
 /* ---------- round flow ---------- */
 async function dealRound(){
@@ -621,23 +750,26 @@ function renderSide(){
   $("#strip").innerHTML=S.mode==="training"?`<div class="strip"><div><div class="sn">${signed(S.rc)}</div><small>Running count</small></div><div><div class="sn">${signed(st.tc,1)}</div><small>True count</small></div><div><div class="sn" style="font-size:1.15rem">${betUnits(st.tcf)}u</div><small>Bet advice</small></div></div>`:"";
 }
 function syncSettings(){
-  const lock=!(S.phase==="bet"&&!S.busy);
+  const lock=!canSetup();
   document.querySelectorAll('[data-act="mode"]').forEach(b=>{b.setAttribute("aria-pressed",String(b.dataset.v===S.mode));b.disabled=lock});
   document.querySelectorAll('[data-act="decks"]').forEach(b=>{b.setAttribute("aria-pressed",String(+b.dataset.v===S.decks));b.disabled=lock});
   $("#pen").value=String(S.pen);$("#pen").disabled=lock;
   $("#unit").value=String(S.unit);$("#unit").disabled=lock;
   document.querySelector('[data-act="newshoe"]').disabled=lock;
+  const rp=S.mode==="rapid";
+  $("#pen").parentElement.hidden=rp;$("#unit").parentElement.hidden=rp;
+  document.querySelector('[data-act="newshoe"]').hidden=rp;
 }
-function render(){syncSettings();renderFelt();renderControls();renderReview();renderSide()}
+function render(){syncSettings();if(S.mode==="rapid"){renderRapid();return}renderFelt();renderControls();renderReview();renderSide()}
 
 /* ---------- events ---------- */
-function canSetup(){return S.phase==="bet"&&!S.busy}
+function canSetup(){if(S.mode==="rapid")return R.phase==="idle"||R.phase==="result";return S.phase==="bet"&&!S.busy}
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-act]");if(!t||t.disabled)return;
   const a=t.dataset.act;
   switch(a){
-    case"mode":if(canSetup()){S.mode=t.dataset.v;render()}break;
-    case"decks":if(canSetup()){S.decks=+t.dataset.v;if(!S.penTouched)S.pen=defaultPen(S.decks);newShoe();S.msg=`New ${S.decks}-deck shoe shuffled. Count is 0.`;render()}break;
+    case"mode":if(canSetup()){S.mode=t.dataset.v;if(S.mode==="rapid"){R.phase="idle";R.cards=[];R.quiz=null;clampRapid()}render()}break;
+    case"decks":if(canSetup()){S.decks=+t.dataset.v;if(!S.penTouched)S.pen=defaultPen(S.decks);newShoe();S.msg=`New ${S.decks}-deck shoe shuffled. Count is 0.`;clampRapid();render()}break;
     case"newshoe":if(canSetup()){newShoe();S.msg="New shoe shuffled. Count is 0.";render()}break;
     case"betminus":S.bet=Math.max(S.unit,S.bet-S.unit);render();break;
     case"betplus":S.bet=Math.min(Math.floor(S.bank/S.unit)*S.unit,S.bet+S.unit);render();break;
@@ -650,15 +782,21 @@ document.addEventListener("click",e=>{
     case"rebuy":S.bank=S.unit*100;S.bet=S.unit;S.msg="Fresh bankroll. Place your bet.";render();break;
     case"quizstep":{const i=$("#quizin");if(i)i.value=(parseInt(i.value||"0",10)||0)+(+t.dataset.d)}break;
     case"quizcheck":checkQuiz();break;
+    case"rdiff":{const p=PRESETS[t.dataset.v];R.secs=p.secs;R.n=p.n;clampRapid();render()}break;
+    case"rstart":startRapid();break;
+    case"rstop":stopRapid();break;
+    case"rstep":{const i=$("#rquizin");if(i)i.value=(parseInt(i.value||"0",10)||0)+(+t.dataset.d)}break;
+    case"rcheck":checkRapid();break;
   }
 });
 $("#pen").addEventListener("change",e=>{if(!canSetup())return;S.pen=parseFloat(e.target.value);S.penTouched=true;newShoe();S.msg="New shoe shuffled. Count is 0.";render()});
 $("#unit").addEventListener("change",e=>{if(!canSetup())return;S.unit=parseInt(e.target.value,10);S.bank=S.unit*100;S.bet=S.unit;S.msg=`Table minimum is ${money(S.unit)}. Bankroll reset to 100 units.`;render()});
 document.addEventListener("keydown",e=>{
-  if(e.target.tagName==="INPUT"){if(e.key==="Enter"&&e.target.id==="quizin")checkQuiz();return}
+  if(e.target.tagName==="INPUT"){if(e.key==="Enter"){if(e.target.id==="quizin")checkQuiz();else if(e.target.id==="rquizin")checkRapid()}return}
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   const k=e.key.toLowerCase();
   if(S.phase==="player"&&!S.busy){const m={h:"hit",s:"stand",d:"double",p:"split"}[k];if(m){e.preventDefault();act(m)}}
+  else if(S.mode==="rapid"){if(e.key==="Enter"&&document.activeElement===document.body&&(R.phase==="idle"||R.phase==="result"))startRapid()}
   else if(S.phase==="bet"&&e.key==="Enter"&&document.activeElement===document.body){dealRound()}
 });
 
